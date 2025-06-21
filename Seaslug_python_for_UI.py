@@ -2,9 +2,16 @@
 import math
 import matplotlib.pyplot as plt
 import random
-import matplotlib.animation as animation
+from matplotlib.animation import FuncAnimation
 from scipy.stats import t
 import streamlit as st
+import numpy as np
+import tempfile
+import os
+from PIL import Image
+
+#import PIL
+#!pip install pillow
 
 def temp_health_penalty(temp):
     if 3 <= temp <= 5:
@@ -94,7 +101,7 @@ class SeaSlug:
 
         # Reproduction logic placeholder
         if self.energy > 80 and self.health > 80 and self.age > 30:
-            self.reproductive_success += self.energy * self.health
+            self.reproductive_success += self.energy * self.health /10000
             self.energy -= 20
 
         self.age += 1
@@ -129,6 +136,66 @@ def simulate_population(temp, salinity, depth, n=1000):
         "avg_reproduction": avg_reproduction
     }
 
+def simulate_one_slug(temp, salinity, depth):
+    slug = SeaSlug()
+    history = []
+
+    for day in range(365):  # Simulate for 1 year
+        if not slug.alive:
+            break
+        slug.step(temp=temp, salinity=salinity, depth=depth)
+        history.append({
+            "day": day,
+            "health": slug.health,
+            "energy": slug.energy,
+            "reproductuion rate": slug.reproductive_success
+        })
+
+    return history
+
+
+
+def create_slug_animation(history):
+    fig, ax = plt.subplots()
+    blob = plt.Circle((0.5, 0.5), 0.1, color='green')
+    ax.add_patch(blob)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis('off')
+    day_text = ax.text(0.05, 0.95, '', transform=ax.transAxes, fontsize=12, verticalalignment='top')
+    energy_text = ax.text(0.95, 0.95, '', transform=ax.transAxes, fontsize=12,
+                          verticalalignment='top', horizontalalignment='right')
+    repro_text = ax.text(0.95, 0.90, '', transform=ax.transAxes, fontsize=12,
+                         verticalalignment='top', horizontalalignment='right')
+
+    def update(frame):
+        health = history[frame]["health"]
+        energy = history[frame]["energy"]
+        reproduction = history[frame]["reproductuion rate"]  # keep your key consistent!
+        if health > 70:
+            color = "green"
+        elif health > 30:
+            color = "orange"
+        elif health > 0:
+            color = "red"
+        else:
+            color = "black"
+            anim.event_source.stop()  # Stop animation when slug dies
+
+        blob.set_color(color)
+        day_text.set_text(f"Day: {history[frame]['day']}")
+        energy_text.set_text(f"Energy: {energy:.1f}")
+        repro_text.set_text(f"Repro: {reproduction:.1f}")
+        return (blob, day_text)
+
+    anim = FuncAnimation(fig, update, frames=len(history), interval=300)
+
+    tmpfile = tempfile.NamedTemporaryFile(delete=False, suffix='.gif')
+    anim.save(tmpfile.name, writer='pillow')
+    plt.close(fig)
+    return tmpfile.name
+
+
 # Sidebar Inputs
 st.title("Sea Slug Simulator")
 
@@ -143,8 +210,9 @@ mode = st.radio("Choose Simulation Mode", ["Single Slug (Animation)", "1000 Slug
 if st.button("Run Simulation", key="run_sim_button"):
     if mode == "Single Slug (Animation)":
         st.write("Running animation...")
-        # Run your animation function and display result
-        # e.g. animate_blob(temperature, salinity, depth)
+        history = simulate_one_slug(temperature, salinity, depth)
+        gif_path = create_slug_animation(history)
+        st.image(gif_path, caption="Sea Slug Health Over Time")
     else:
         st.write("Simulating 1000 slugs...")
         results = simulate_population(temperature, salinity, depth, n=1000)
