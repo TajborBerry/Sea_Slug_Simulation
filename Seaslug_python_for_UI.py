@@ -6,31 +6,6 @@ import matplotlib.animation as animation
 from scipy.stats import t
 import streamlit as st
 
-
-# Sidebar Inputs
-st.title("Sea Slug Simulator")
-
-st.sidebar.header("Environment Parameters")
-temperature = st.sidebar.slider("Temperature (°C)", 0.0, 10.0, 4.0)
-salinity = st.sidebar.slider("Salinity (PSU)", 30.0, 40.0, 34.0)
-depth = st.sidebar.slider("Depth (m)", 0, 300, 125)
-
-# Mode selection
-mode = st.radio("Choose Simulation Mode", ["Single Slug (Animation)", "1000 Slugs (Stats)"])
-
-if st.button("Run Simulation"):
-    if mode == "Single Slug (Animation)":
-        st.write("Running animation...")
-        # Run your animation function and display result
-        # e.g. animate_blob(temperature, salinity, depth)
-    else:
-        st.write("Simulating 1000 slugs...")
-        # Run bulk simulation and show histogram
-
-
-'''
-Health penality for the day
-'''
 def temp_health_penalty(temp):
     if 3 <= temp <= 5:
         return 0.1
@@ -46,12 +21,7 @@ def depth_health_penalty(depth):
     return abs(depth - 125) / 100
 
 def hunt(df=4, scale=1.0, success_chance=0.8):
-    """
-    Returns health gain from a hunting attempt.
-    - df: degrees of freedom for the t-distribution.
-    - scale: spread of the distribution (like std dev).
-    - success_chance: probability the slug successfully hunts that day.
-    """
+
     if random.random() > success_chance:
         return 0  # Failed hunt = no gain
     
@@ -132,90 +102,61 @@ class SeaSlug:
         if self.age > 100 or self.health <= 0 or self.energy <= 0:
             self.alive = False
 
-'''
-slugs = [SeaSlug() for _ in range(1000)]
 
-for day in range(365 * 10):  # 10 years
-    for slug in slugs:
-        slug.step(temp=8, salinity=38.0, depth=100)
+def simulate_population(temp, salinity, depth, n=1000):
+    slugs = [SeaSlug() for _ in range(n)]
 
-# After simulation: analyze output
-lifespans = [slug.age for slug in slugs]
-energies = [slug.energy for slug in slugs]
-repro_rates = [slug.reproductive_success for slug in slugs]
+    for day in range(365 * 10):  # Simulate up to 10 years
+        for slug in slugs:
+            if slug.alive:
+                slug.step(temp=temp, salinity=salinity, depth=depth)
 
+    # Collect only slugs that actually lived (avoid division by zero)
+    lifespans = [slug.age for slug in slugs]
+    energies = [slug.energy for slug in slugs]
+    repro_rates = [slug.reproductive_success for slug in slugs]
 
+    avg_lifespan = sum(lifespans) / len(lifespans)
+    avg_energy = sum(energies) / len(energies)
+    avg_reproduction = sum(repro_rates) / len(repro_rates)
 
-# %%
-print("Average lifespan:", sum(lifespans)/len(slugs))
-print("Average energy:", sum(energies)/len(slugs))
-print("Average reproduction:", sum(repro_rates)/len(slugs))
+    return {
+        "lifespans": lifespans,
+        "energies": energies,
+        "repro_rates": repro_rates,
+        "avg_lifespan": avg_lifespan,
+        "avg_energy": avg_energy,
+        "avg_reproduction": avg_reproduction
+    }
 
+# Sidebar Inputs
+st.title("Sea Slug Simulator")
 
-plt.figure(figsize=(10, 6))
-plt.hist(lifespans, bins=30, color='skyblue', edgecolor='black')
-plt.title("Distribution of Sea Slug Lifespans")
-plt.xlabel("Lifespan (days)")
-plt.ylabel("Number of Sea Slugs")
-plt.grid(True, linestyle='--', alpha=0.6)
-plt.show()
+st.sidebar.header("Environment Parameters")
+temperature = st.sidebar.slider("Temperature (°C)", 0.0, 10.0, 4.0)
+salinity = st.sidebar.slider("Salinity (PSU)", 30.0, 40.0, 34.0)
+depth = st.sidebar.slider("Depth (m)", 0, 300, 125)
 
+# Mode selection
+mode = st.radio("Choose Simulation Mode", ["Single Slug (Animation)", "1000 Slugs (Stats)"])
 
-fig, ax = plt.subplots()
-ax.set_xlim(0, 1)
-ax.set_ylim(0, 1.2)
-ax.axis('off')
-
-# Blob (the sea slug)
-blob = plt.Circle((0.5, 0.4), 0.2, fc='green')
-ax.add_patch(blob)
-
-# Health bar background
-bar_bg = plt.Rectangle((0.2, 1.0), 0.6, 0.05, color='lightgray')
-ax.add_patch(bar_bg)
-
-# Health bar foreground (this updates)
-bar_fg = plt.Rectangle((0.2, 1.0), 0.6, 0.05, color='green')
-ax.add_patch(bar_fg)
-
-# Health text
-health_text = ax.text(0.5, 1.07, "Health: 100", ha='center', va='bottom', fontsize=10)
-
-# Slug instance
-slug = SeaSlug()
-
-# Update function
-def update(frame):
-    slug.step(temp=4, salinity=34.0, depth=100)
-
-    # Update blob color
-    if not slug.alive:
-        color = 'black'
-    elif slug.health > 70:
-        color = 'green'
-    elif slug.health > 30:
-        color = 'orange'
+if st.button("Run Simulation", key="run_sim_button"):
+    if mode == "Single Slug (Animation)":
+        st.write("Running animation...")
+        # Run your animation function and display result
+        # e.g. animate_blob(temperature, salinity, depth)
     else:
-        color = 'red'
-
-    blob.set_facecolor(color)
-
-    # Update health bar width and color
-    bar_width = max(slug.health / 100.0 * 0.6, 0)
-    bar_fg.set_width(bar_width)
-
-    if slug.health > 70:
-        bar_fg.set_color('green')
-    elif slug.health > 30:
-        bar_fg.set_color('orange')
-    else:
-        bar_fg.set_color('red')
-
-    # Update health text
-    health_text.set_text(f"Health: {int(slug.health)}")
-
-    return blob, bar_fg, health_text
-
-ani = animation.FuncAnimation(fig, update, frames=200, interval=100, blit=True)
-plt.show()
-'''
+        st.write("Simulating 1000 slugs...")
+        results = simulate_population(temperature, salinity, depth, n=1000)
+        
+        st.write(f"**Average lifespan:** {results['avg_lifespan']:.2f} days")
+        st.write(f"**Average energy:** {results['avg_energy']:.2f}")
+        st.write(f"**Average reproductive success:** {results['avg_reproduction']:.2f}")
+        
+        # Plot histogram
+        fig, ax = plt.subplots()
+        ax.hist(results["lifespans"], bins=30, color="skyblue", edgecolor="black")
+        ax.set_title("Lifespan Distribution")
+        ax.set_xlabel("Lifespan (days)")
+        ax.set_ylabel("Number of Slugs")
+        st.pyplot(fig)
