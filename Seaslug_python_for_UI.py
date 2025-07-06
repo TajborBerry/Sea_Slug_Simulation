@@ -27,10 +27,10 @@ def depth_health_penalty(depth):
         return 0.1
     return abs(depth - 125) / 100
 
-def hunt(df=4, scale=1.0, success_chance=0.8):
+def gather(df=4, scale=1.0, success_chance=0.8):
 
     if random.random() > success_chance:
-        return 0  # Failed hunt = no gain
+        return 0  # Failed gather = no gain
     
     # Sample from a t-distribution (heavy tails, centered around 0)
     gain = t.rvs(df=df) * scale
@@ -38,6 +38,17 @@ def hunt(df=4, scale=1.0, success_chance=0.8):
     # Clamp to non-negative values (or optionally allow negative = exhaustion)
     return max(0, round(gain, 2))
 
+def prey(eaten):
+    if random.random() <= eaten:
+        return False
+    else:
+        return True
+    
+def human_pollution(pollution):
+    if random.random() <= pollution:
+        return False
+    else:
+        return True
 
 def daily_health_penalty(temp, salinity, depth):
     """
@@ -80,45 +91,54 @@ class SeaSlug:
         self.age = 0
         self.health = 100.0
         self.energy = 100.0
+        self.reproducted = False
         self.reproductive_success = 0
         self.alive = True
-    def step(self, temp, salinity, depth):
+        self.cause_of_death = "Still alive"
+    def step(self, temp, salinity, depth, pollution):
         if not self.alive:
             return
-        
-        self.health = min(100, self.health + hunt())
-        penalty = daily_health_penalty(temp, salinity, depth) + (max(self.age-50,0) ** 2)/100
+
+        self.health = min(100, self.health + gather())
+        penalty = daily_health_penalty(temp, salinity, depth)
         self.health -= penalty
-        change = daily_energy_change(temp, salinity, depth) - (max(self.age-40,0) ** 2) /100 
+        change = daily_energy_change(temp, salinity, depth)
         self.energy += change
-        self.energy = min(100, self.energy + hunt())
+        self.energy = min(100, self.energy + gather())
 
-        #resting
-        if self.energy > 90 and self.health < 30:
-            self.energy -= 10
+        # Resting logic
+        if self.energy < 50 or self.health < 30:
+            self.energy += 10
             self.health += 5
-
-
-        # Reproduction logic placeholder
-        if self.energy > 80 and self.health > 80 and self.age > 30:
-            self.reproductive_success += self.energy * self.health /10000
-            self.energy -= 20
+            if not prey(0.1):
+                self.alive = False
+                self.cause_of_death = "Got eaten"
+        
+        if not human_pollution(pollution=pollution):
+                self.alive = False
+                self.cause_of_death = "Human Pollution"            
+        
+        # Reproduction
+        if self.age > 225 and not self.reproducted:
+            self.reproductive_success += self.energy * self.health / 1000
+            self.reproducted = True
 
         self.age += 1
 
-        if self.age > 100 or self.health <= 0 or self.energy <= 0:
+        if self.age > 365 or self.health <= 0 or self.energy <= 0:
             self.alive = False
+            self.cause_of_death = "Health, age or energy failure"
 
 
-def simulate_population(temp, salinity, depth, n=1000):
+def simulate_population(temp, salinity, depth, pollution, n=1000):
     slugs = [SeaSlug() for _ in range(n)]
 
-    for day in range(365 * 10):  # Simulate up to 10 years
+    for day in range(365):
         for slug in slugs:
             if slug.alive:
-                slug.step(temp=temp, salinity=salinity, depth=depth)
+                slug.step(temp=temp, salinity=salinity, depth=depth, pollution=pollution)
 
-    # Collect only slugs that actually lived (avoid division by zero)
+    # Collect stats
     lifespans = [slug.age for slug in slugs]
     energies = [slug.energy for slug in slugs]
     repro_rates = [slug.reproductive_success for slug in slugs]
@@ -136,19 +156,20 @@ def simulate_population(temp, salinity, depth, n=1000):
         "avg_reproduction": avg_reproduction
     }
 
-def simulate_one_slug(temp, salinity, depth):
+def simulate_one_slug(temp, salinity, depth, pollution):
     slug = SeaSlug()
     history = []
 
-    for day in range(365):  # Simulate for 1 year
+    for day in range(365):
         if not slug.alive:
             break
-        slug.step(temp=temp, salinity=salinity, depth=depth)
+        slug.step(temp=temp, salinity=salinity, depth=depth, pollution=pollution)
         history.append({
             "day": day,
             "health": slug.health,
             "energy": slug.energy,
-            "reproductuion rate": slug.reproductive_success
+            "reproductuion rate": slug.reproductive_success,
+            "cause of death": slug.cause_of_death
         })
 
     return history
@@ -163,15 +184,20 @@ def create_slug_animation(history):
     ax.set_ylim(0, 1)
     ax.axis('off')
     day_text = ax.text(0.05, 0.95, '', transform=ax.transAxes, fontsize=12, verticalalignment='top')
-    energy_text = ax.text(0.95, 0.95, '', transform=ax.transAxes, fontsize=12,
+    health_text = ax.text(0.95, 0.95, '', transform=ax.transAxes, fontsize=12,
                           verticalalignment='top', horizontalalignment='right')
-    repro_text = ax.text(0.95, 0.90, '', transform=ax.transAxes, fontsize=12,
+    energy_text = ax.text(0.95, 0.90, '', transform=ax.transAxes, fontsize=12,
+                          verticalalignment='top', horizontalalignment='right')
+    repro_text = ax.text(0.95, 0.85, '', transform=ax.transAxes, fontsize=12,
+                         verticalalignment='top', horizontalalignment='right')
+    death_text = ax.text(0.95, 0.80, '', transform=ax.transAxes, fontsize=12,
                          verticalalignment='top', horizontalalignment='right')
 
     def update(frame):
         health = history[frame]["health"]
         energy = history[frame]["energy"]
-        reproduction = history[frame]["reproductuion rate"]  # keep your key consistent!
+        reproduction = history[frame]["reproductuion rate"]
+        death = history[frame]["cause of death"]  # keep your key consistent!
         if health > 70:
             color = "green"
         elif health > 30:
@@ -184,8 +210,10 @@ def create_slug_animation(history):
 
         blob.set_color(color)
         day_text.set_text(f"Day: {history[frame]['day']}")
+        health_text.set_text(f"Health: {health:.1f}")
         energy_text.set_text(f"Energy: {energy:.1f}")
         repro_text.set_text(f"Repro: {reproduction:.1f}")
+        death_text.set_text(f"Death: {death}")
         return (blob, day_text)
 
     anim = FuncAnimation(fig, update, frames=len(history), interval=300)
@@ -203,6 +231,7 @@ st.sidebar.header("Environment Parameters")
 temperature = st.sidebar.slider("Temperature (°C)", 0.0, 10.0, 4.0)
 salinity = st.sidebar.slider("Salinity (PSU)", 30.0, 40.0, 34.0)
 depth = st.sidebar.slider("Depth (m)", 0, 300, 125)
+pollution = st.sidebar.slider("Pollution", 0.0, 1.0, 0.1)
 
 # Mode selection
 mode = st.radio("Choose Simulation Mode", ["Single Slug (Animation)", "1000 Slugs (Stats)"])
@@ -210,12 +239,12 @@ mode = st.radio("Choose Simulation Mode", ["Single Slug (Animation)", "1000 Slug
 if st.button("Run Simulation", key="run_sim_button"):
     if mode == "Single Slug (Animation)":
         st.write("Running animation...")
-        history = simulate_one_slug(temperature, salinity, depth)
+        history = simulate_one_slug(temperature, salinity, depth, pollution)
         gif_path = create_slug_animation(history)
         st.image(gif_path, caption="Sea Slug Health Over Time")
     else:
         st.write("Simulating 1000 slugs...")
-        results = simulate_population(temperature, salinity, depth, n=1000)
+        results = simulate_population(temperature, salinity, depth, pollution, n=1000)
         
         st.write(f"**Average lifespan:** {results['avg_lifespan']:.2f} days")
         st.write(f"**Average energy:** {results['avg_energy']:.2f}")
