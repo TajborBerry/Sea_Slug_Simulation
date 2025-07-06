@@ -1,0 +1,7 @@
+streamlit
+matplotlib
+numpy
+scipy
+pillow
+math
+random
