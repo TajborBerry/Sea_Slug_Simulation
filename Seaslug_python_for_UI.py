@@ -9,23 +9,32 @@ import numpy as np
 import tempfile
 import os
 from PIL import Image
+from collections import Counter
 
 #import PIL
 #!pip install pillow
 
 def temp_health_penalty(temp):
-    if 3 <= temp <= 5:
+    if 10 <= temp <= 15:
         return 0.1
-    return abs(temp - 4)**2 * 0.05
+    return abs(temp - 12)**2 * 0.05
 
 def salinity_health_penalty(salinity):
     sigma = 1.5
-    return 1 - math.exp(-((salinity - 34)**2) / (2 * sigma**2))
+    return (1 - math.exp(-((salinity - 34)**2) / (2 * sigma**2))) * 0.05
+
+def salinity_health_penalty(salinity):
+    if 30 <= salinity <= 40:
+        return -0.2  # health gain in optimal euhaline range
+    elif 18 <= salinity < 30:
+        return 0.2   # mild penalty in edge polyhaline/euhaline
+    else:
+        return 0.5  # sharp penalty in unsuitable salinity
 
 def depth_health_penalty(depth):
-    if 50 <= depth <= 200:
+    if 10 <= depth <= 50:
         return 0.1
-    return abs(depth - 125) / 100
+    return abs(depth - 30) / 1000
 
 def gather(df=4, scale=1.0, success_chance=0.8):
 
@@ -63,23 +72,25 @@ def daily_health_penalty(temp, salinity, depth):
 
 
 def daily_energy_change(temp, salinity, depth):
-    change = 10.0
+    change = -0.1
 
     # Temperature effect on energy (cold = sluggish, warm = overactive = energy loss)
-    if 3.5 <= temp <= 4.5:
+    if 9 <= temp <= 16:
         change += 0.3  # Slight energy gain in optimal temp
-    elif temp < 2.5 or temp > 5.5:
-        change -= abs(temp - 4) * 1.5  # Strong energy penalty
-
-    # Salinity: stable salinity helps conserve energy
-    if 33.5 <= salinity <= 34.5:
-        change += 0.2
+    elif temp < 10 or temp > 15:
+        change -= abs(temp - 12.5) * 0.05   # Strong energy penalty
+    
+    if 30 <= salinity <= 40:
+        change += 0.3  # health gain in optimal euhaline range
+    elif 18 <= salinity < 30:
+        change += 0.1   # mild penalty in edge polyhaline/euhaline
     else:
-        change -= ((salinity - 34) ** 2) * 0.1
+        change -= ((salinity - 34) ** 2) * 0.05   # sharp penalty in unsuitable salinity
+
 
     # Depth: going too deep costs energy, even if it's safe for health
-    if depth < 75 or depth > 175:
-        change -= abs(depth - 125) / 80  # penalty increases away from optimal
+    if depth < 10 or depth > 50:
+        change -= abs(depth - 30) / 100  # penalty increases away from optimal
     else:
         change += 0.1  # gain in sweet spot
 
@@ -114,9 +125,15 @@ class SeaSlug:
                 self.alive = False
                 self.cause_of_death = "Got eaten"
         
-        if not human_pollution(pollution=pollution):
+        #polluting logic 
+        if self.age % 10 == 0:
+            if not prey(0.005):
                 self.alive = False
-                self.cause_of_death = "Human Pollution"            
+                self.cause_of_death = "Got eaten" 
+            if not human_pollution(pollution=pollution):
+                self.alive = False
+                self.cause_of_death = "Human Pollution"
+         
         
         # Reproduction
         if self.age > 225 and not self.reproducted:
@@ -125,9 +142,17 @@ class SeaSlug:
 
         self.age += 1
 
-        if self.age > 365 or self.health <= 0 or self.energy <= 0:
+        if self.age > 364:
             self.alive = False
-            self.cause_of_death = "Health, age or energy failure"
+            self.cause_of_death = "Old age"                  
+        
+        if self.health <= 0:
+            self.alive = False
+            self.cause_of_death = "Health failure"    
+
+        if self.energy <= 0:
+            self.alive = False
+            self.cause_of_death = "Ran out of energy"
 
 
 def simulate_population(temp, salinity, depth, pollution, n=1000):
@@ -142,6 +167,9 @@ def simulate_population(temp, salinity, depth, pollution, n=1000):
     lifespans = [slug.age for slug in slugs]
     energies = [slug.energy for slug in slugs]
     repro_rates = [slug.reproductive_success for slug in slugs]
+    
+    # 🆕 Count causes of death
+    cause_counts = Counter(slug.cause_of_death for slug in slugs)
 
     avg_lifespan = sum(lifespans) / len(lifespans)
     avg_energy = sum(energies) / len(energies)
@@ -153,7 +181,8 @@ def simulate_population(temp, salinity, depth, pollution, n=1000):
         "repro_rates": repro_rates,
         "avg_lifespan": avg_lifespan,
         "avg_energy": avg_energy,
-        "avg_reproduction": avg_reproduction
+        "avg_reproduction": avg_reproduction,
+        "cause_counts": cause_counts  # 🆕 include in results
     }
 
 def simulate_one_slug(temp, salinity, depth, pollution):
@@ -225,25 +254,38 @@ def create_slug_animation(history):
 
 
 # Sidebar Inputs
-st.title("Sea Slug Simulator")
+st.title("Sea Lemon Simulator")
 
 st.sidebar.header("Environment Parameters")
-temperature = st.sidebar.slider("Temperature (°C)", 0.0, 10.0, 4.0)
-salinity = st.sidebar.slider("Salinity (PSU)", 30.0, 40.0, 34.0)
-depth = st.sidebar.slider("Depth (m)", 0, 300, 125)
-pollution = st.sidebar.slider("Pollution", 0.0, 1.0, 0.1)
+temperature = st.sidebar.slider("Temperature (°C)", 0.0, 24.0, 12.5)
+salinity = st.sidebar.slider("Salinity (PSU)", 5.0, 60.0, 34.0)
+depth = st.sidebar.slider("Depth (m)", 0, 300, 30)
+pollution_level = st.sidebar.radio(
+    "Pollution Level",
+    options=["No Pollution", "Low", "Medium", "High"],
+    index=1
+)
+
+# 2. Map to a numeric value ONCE
+pollution_map = {
+    "No Pollution": 0.0,
+    "Low": 0.0005,
+    "Medium": 0.001,
+    "High": 0.01
+}
+pollution = pollution_map[pollution_level]
 
 # Mode selection
-mode = st.radio("Choose Simulation Mode", ["Single Slug (Animation)", "1000 Slugs (Stats)"])
+mode = st.radio("Choose Simulation Mode", ["Single Sea Lemon (Animation)", "1000 Sea Lemons (Stats)"])
 
 if st.button("Run Simulation", key="run_sim_button"):
-    if mode == "Single Slug (Animation)":
+    if mode == "Single Sea Lemon (Animation)":
         st.write("Running animation...")
         history = simulate_one_slug(temperature, salinity, depth, pollution)
         gif_path = create_slug_animation(history)
-        st.image(gif_path, caption="Sea Slug Health Over Time")
+        st.image(gif_path, caption="Sea Lemon Health Over Time")
     else:
-        st.write("Simulating 1000 slugs...")
+        st.write("Simulating 1000 lemons...")
         results = simulate_population(temperature, salinity, depth, pollution, n=1000)
         
         st.write(f"**Average lifespan:** {results['avg_lifespan']:.2f} days")
@@ -255,5 +297,17 @@ if st.button("Run Simulation", key="run_sim_button"):
         ax.hist(results["lifespans"], bins=30, color="skyblue", edgecolor="black")
         ax.set_title("Lifespan Distribution")
         ax.set_xlabel("Lifespan (days)")
-        ax.set_ylabel("Number of Slugs")
+        ax.set_ylabel("Number of Sea lemons")
         st.pyplot(fig)
+        
+        cause_counts = results["cause_counts"]
+        fig2, ax2 = plt.subplots()
+        ax2.pie(
+            cause_counts.values(), 
+            labels=cause_counts.keys(), 
+            autopct="%1.1f%%", 
+            startangle=140
+        )
+        ax2.axis("equal")  # Equal aspect ratio for a circle
+
+        st.pyplot(fig2)
