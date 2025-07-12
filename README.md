@@ -47,12 +47,12 @@ pip install streamlit matplotlib numpy pillow scipy
 ### ▶️ Run the App
 
 Use the uploaded version on streamlit:
-https://sealsimulation-b3pcyvp7h8cybzf5lv6j7v.streamlit.app/
+https://tajborberry-sea-slug-simulation-sea-lemon-simulation-zpl8hz.streamlit.app/
 
 OR
 
 ```bash
-streamlit run Seaslug_python_for_UI.py
+streamlit run Seaslug_lemon_simulation.py
 ```
 
 Then open the local URL (usually `http://localhost:8501`) in your browser.
@@ -72,8 +72,9 @@ Then open the local URL (usually `http://localhost:8501`) in your browser.
 
 ## 📂 File Structure
 
-- `Seaslug_python_for_UI.py`: Main simulation + UI logic
+- `Seaslug_lemon_simulation.py`: Main simulation + UI logic
 - `README.md`: Project overview and usage instructions
+- `requirements.txt.md`: Required packages to install for Streamlit
 
 ---
 
